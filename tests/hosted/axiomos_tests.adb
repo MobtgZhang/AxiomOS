@@ -1,0 +1,145 @@
+with Ada.Text_IO;
+with Test_Process;
+with Test_Heap;
+with AxiomOS.Types; use AxiomOS.Types;
+with AxiomOS.Memory.Physical;
+with AxiomOS.Memory.Virtual;
+with AxiomOS.SMP.Topology;
+with AxiomOS.SMP.Startup;
+with AxiomOS.Scheduler.Run_Queues;
+with AxiomOS.VFS.Tmpfs;
+with AxiomOS.VFS.Paths;
+with AxiomOS.VFS.Ustar;
+with AxiomOS.IO.Handles;
+with AxiomOS.IO.Streams;
+with AxiomOS.Drivers.Registry;
+with AxiomOS.Drivers.Lifecycle;
+procedure AxiomOS_Tests is
+   use AxiomOS;
+   use type U64, U32, U8, SMP.CPU_State, IO.Handle;
+   PMM : Memory.Physical.Allocator;
+   Space : Memory.Virtual.Address_Space;
+   CPUs : SMP.Manager;
+   FS : VFS.File_System;
+   Handles : IO.Handle_Table;
+   Devices : Drivers.Manager;
+   S : Status;
+   A, B : U64;
+   C : SMP.CPU_Index;
+   T : U32;
+   N : VFS.Node_Id;
+   H, Old : IO.Handle;
+   Count, Id, Driver : Natural;
+   Buffer : Bytes (0 .. 7);
+   Path : String (1 .. 127);
+   Path_Length : Natural;
+begin
+   Memory.Physical.Reset (PMM);
+   Memory.Physical.Add_Region (PMM, 16#1000#, 16#10000#, S);
+   pragma Assert (S = Success and PMM.Available = 16);
+   Memory.Physical.Add_Region (PMM, 16#2000#, 16#1000#, S);
+   pragma Assert (S = Already_Exists);
+   Memory.Physical.Allocate (PMM, 2, 16#4000#, Memory.Physical.Kernel, A, S);
+   pragma Assert (S = Success and A = 16#4000#);
+   Memory.Physical.Retain (PMM, A, S);
+   pragma Assert (S = Success);
+   Memory.Physical.Release (PMM, A, 2, S);
+   pragma Assert (S = Success and PMM.Available = 15);
+   Memory.Physical.Release (PMM, A, 1, S);
+   pragma Assert (S = Success and PMM.Available = 16);
+   Memory.Physical.Release (PMM, A, 1, S);
+   pragma Assert (S = Invalid_Argument);
+   Memory.Physical.Allocate (PMM, 17, 4096, Memory.Physical.Kernel, B, S);
+   pragma Assert (S = Out_Of_Memory and B = 0);
+   Ada.Text_IO.Put_Line ("PASS physical regions, ownership, alignment, references, OOM");
+
+   Memory.Virtual.Map (Space, 16#1000#, 16#4000#, 4096,
+                       (True, True, False, True, False), S);
+   pragma Assert (S = Success);
+   pragma Assert (Memory.Virtual.Check_User (Space, 16#1000#, 4096, True));
+   pragma Assert (not Memory.Virtual.Check_User (Space, 16#1FFF#, 2));
+   pragma Assert (not Memory.Virtual.Check_User (Space, U64'Last, 2));
+   Memory.Virtual.Map (Space, 16#2000#, 16#5000#, 4096,
+                       (True, False, True, True, False), S);
+   pragma Assert (S = Success);
+   pragma Assert (Memory.Virtual.Check_User (Space, 16#1000#, 8192));
+   pragma Assert (not Memory.Virtual.Check_User (Space, 16#1000#, 8192, True));
+   Memory.Virtual.Map (Space, 16#3000#, 16#6000#, 4096,
+                       (True, True, True, True, False), S);
+   pragma Assert (S = Invalid_Argument);
+   Memory.Virtual.Unmap (Space, 16#1000#, 4096, S);
+   pragma Assert (S = Success and not Memory.Virtual.Check_User (Space, 16#1000#, 1));
+   Ada.Text_IO.Put_Line ("PASS address spaces, copy validation, W^X, unmap");
+
+   SMP.Topology.Register_CPU (CPUs, 0, True, C, S);
+   pragma Assert (S = Success and C = 0);
+   SMP.Topology.Register_CPU (CPUs, 1, False, C, S);
+   pragma Assert (S = Success and C = 1);
+   SMP.Startup.Begin_Start (CPUs, C, 10, 20, S);
+   pragma Assert (S = Success);
+   SMP.Startup.Acknowledge (CPUs, C, S);
+   pragma Assert (S = Success and CPUs.CPUs (C).State = SMP.Online);
+   for I in 1 .. 32 loop
+      Scheduler.Run_Queues.Enqueue (CPUs, C, U32 (I), S);
+      pragma Assert (S = Success);
+   end loop;
+   Scheduler.Run_Queues.Enqueue (CPUs, C, 33, S);
+   pragma Assert (S = No_Space);
+   for I in 1 .. 32 loop
+      Scheduler.Run_Queues.Dequeue (CPUs, C, T, S);
+      pragma Assert (S = Success and T = U32 (I));
+   end loop;
+   Scheduler.Run_Queues.Dequeue (CPUs, C, T, S);
+   pragma Assert (S = Would_Block);
+   SMP.Topology.Register_CPU (CPUs, 2, False, C, S);
+   SMP.Startup.Begin_Start (CPUs, C, 10, 20, S);
+   SMP.Startup.Expire (CPUs, 30);
+   pragma Assert (CPUs.CPUs (C).State = SMP.Failed);
+   Ada.Text_IO.Put_Line ("PASS CPU topology, handshake, timeout, bounded run queues");
+
+   VFS.Tmpfs.Initialize (FS);
+   VFS.Paths.Normalize ("//tmp/./hello/", Path, Path_Length, S);
+   pragma Assert (S = Success and Path (1 .. Path_Length) = "/tmp/hello");
+   VFS.Paths.Normalize ("/tmp/../secret", Path, Path_Length, S);
+   pragma Assert (S = Permission_Denied);
+   VFS.Tmpfs.Create (FS, "/tmp", VFS.Directory, N, S);
+   pragma Assert (S = Success);
+   VFS.Tmpfs.Create (FS, "/tmp/hello", VFS.Regular, N, S);
+   pragma Assert (S = Success);
+   IO.Handles.Open (Handles, FS, "/tmp/hello", (True, True), H, S);
+   pragma Assert (S = Success);
+   IO.Streams.Write (Handles, FS, H, (65, 100, 97), Count, S);
+   pragma Assert (S = Success and Count = 3);
+   Old := H;
+   IO.Handles.Close (Handles, H, S);
+   IO.Handles.Open (Handles, FS, "/tmp/hello", (True, False), H, S);
+   pragma Assert (S = Success and H /= Old);
+   IO.Streams.Read (Handles, FS, H, Buffer, Count, S);
+   pragma Assert (S = Success and Count = 3 and Buffer (0 .. 2) = (65, 100, 97));
+   IO.Streams.Read (Handles, FS, Old, Buffer, Count, S);
+   pragma Assert (S = Bad_Handle);
+   IO.Streams.Write (Handles, FS, H, (1 => 0), Count, S);
+   pragma Assert (S = Permission_Denied);
+   VFS.Ustar.Mount_Ustar (FS, (0 .. 1023 => 0), S);
+   pragma Assert (S = Success);
+   VFS.Ustar.Mount_Ustar (FS, (0 .. 511 => 0), S);
+   pragma Assert (S = Corrupt);
+   Ada.Text_IO.Put_Line ("PASS paths, tmpfs, ustar bounds, I/O rights, stale handles");
+
+   Drivers.Registry.Register_Driver (Devices, Drivers.Serial, 0, 0, Driver, S);
+   pragma Assert (S = Success);
+   Drivers.Registry.Discover (Devices,
+      (Drivers.Discovered, Drivers.Serial, 0, 0, 16#1000#, 4096, 1, 0), Id, S);
+   pragma Assert (S = Success);
+   Drivers.Registry.Bind (Devices, Id, S);
+   pragma Assert (S = Success and Devices.Devices (Id).Driver = Driver);
+   Drivers.Lifecycle.Set_Running (Devices, Id, S);
+   pragma Assert (S = Success);
+   Drivers.Registry.Discover (Devices,
+      (Drivers.Discovered, Drivers.Serial, 0, 0, 16#1800#, 4096, 1, 0), Id, S);
+   pragma Assert (S = Busy);
+   Ada.Text_IO.Put_Line ("PASS driver matching, lifecycle, resource conflicts");
+   Test_Heap.Run;
+   Test_Process.Run;
+   Ada.Text_IO.Put_Line ("ALL HOSTED TESTS PASSED");
+end AxiomOS_Tests;
