@@ -1,0 +1,44 @@
+with AxiomOS.Types; use AxiomOS.Types;
+package AxiomOS.Boot.Protocol with Preelaborate is
+   Magic_Value : constant U64 := 16#4158_494F_4D4F_5331#;
+   ABI_Version : constant U32 := 2;
+   type Boot_Info is record
+      Magic : U64 := Magic_Value;
+      Version : U32 := ABI_Version;
+      Structure_Size : U32 := 136;
+      Memory_Map : U64 := 0;
+      Memory_Map_Size : U64 := 0;
+      Descriptor_Size : U64 := 0;
+      Descriptor_Version : U32 := 0;
+      Flags : U32 := 0;
+      Initramfs_Base, Initramfs_Size : U64 := 0;
+      Kernel_Base, Kernel_Size : U64 := 0;
+      Stack_Base, Stack_Size : U64 := 0;
+      ACPI, Device_Tree : U64 := 0;
+      Framebuffer_Base, Framebuffer_Size : U64 := 0;
+      Bootstrap_CPU : U64 := U64'Last;
+   end record with Convention => C, Size => 1088, Alignment => 8;
+   for Boot_Info use record
+      Magic at 0 range 0 .. 63;
+      Version at 8 range 0 .. 31;
+      Structure_Size at 12 range 0 .. 31;
+      Memory_Map at 16 range 0 .. 63;
+      Memory_Map_Size at 24 range 0 .. 63;
+      Descriptor_Size at 32 range 0 .. 63;
+      Descriptor_Version at 40 range 0 .. 31;
+      Flags at 44 range 0 .. 31;
+      Initramfs_Base at 48 range 0 .. 63;
+      Initramfs_Size at 56 range 0 .. 63;
+      Kernel_Base at 64 range 0 .. 63;
+      Kernel_Size at 72 range 0 .. 63;
+      Stack_Base at 80 range 0 .. 63;
+      Stack_Size at 88 range 0 .. 63;
+      ACPI at 96 range 0 .. 63;
+      Device_Tree at 104 range 0 .. 63;
+      Framebuffer_Base at 112 range 0 .. 63;
+      Framebuffer_Size at 120 range 0 .. 63;
+      Bootstrap_CPU at 128 range 0 .. 63;
+   end record;
+   type Info_Access is access all Boot_Info with Convention => C;
+   function Valid (Info : Boot_Info) return Boolean;
+end AxiomOS.Boot.Protocol;
