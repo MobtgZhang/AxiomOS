@@ -3,3 +3,8 @@
 
 # Ada Library Information
 *.ali
+
+/build/
+/.toolchains/
+/alire/
+__pycache__/

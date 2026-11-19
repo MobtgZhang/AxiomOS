@@ -1,0 +1,13 @@
+project Hosted is
+   for Source_Dirs use ("kernel/common", "boot/common", "kernel/memory", "kernel/smp",
+                        "kernel/storage", "kernel/scheduler", "kernel/vfs", "kernel/io",
+                        "kernel/drivers", "kernel/process", "kernel/syscall",
+                        "kernel/ipc", "kernel/security", "tests/hosted");
+   for Object_Dir use "build/hosted/obj";
+   for Exec_Dir use "build/hosted";
+   for Main use ("axiomos_tests.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-g", "-O1", "-gnata", "-gnatVa", "-gnatwa");
+   end Compiler;
+end Hosted;

@@ -1,0 +1,25 @@
+project User is
+   Arch := external ("ARCH", "x86_64");
+   for Languages use ("Ada");
+   for Source_Dirs use ("user/init", "libs/sysapi", "kernel/common");
+   for Object_Dir use "build/" & Arch & "/user/obj";
+   package Compiler is
+      for Driver ("Ada") use external ("ADA_CC", "gcc");
+      Common := ("-gnat2022", "-gnatp", "-O2", "-g",
+                 "-fno-stack-protector", "-fno-pie", "-fno-unwind-tables",
+                 "-fno-asynchronous-unwind-tables");
+      case Arch is
+         when "x86_64" =>
+            for Default_Switches ("Ada") use Common &
+              ("-mabi=ms", "-maccumulate-outgoing-args", "-mno-red-zone", "-mgeneral-regs-only");
+         when "aarch64" =>
+            for Default_Switches ("Ada") use Common & ("-mgeneral-regs-only");
+         when "riscv64" =>
+            for Default_Switches ("Ada") use Common &
+              ("-march=rv64imac_zicsr_zifencei", "-mabi=lp64", "-mcmodel=medany", "-mno-relax");
+         when "loongarch64" =>
+            for Default_Switches ("Ada") use Common & ("-march=loongarch64", "-mabi=lp64d");
+         when others => null;
+      end case;
+   end Compiler;
+end User;

@@ -1,0 +1,34 @@
+project Freestanding is
+   Arch := external ("ARCH", "x86_64");
+   Kind := external ("KIND", "kernel");
+   for Languages use ("Ada");
+   for Source_Dirs use ("kernel/common", "kernel/memory", "kernel/smp",
+                        "kernel/storage", "kernel/scheduler", "kernel/vfs", "kernel/io",
+                        "kernel/drivers", "kernel/process", "kernel/syscall",
+                        "kernel/ipc", "kernel/security", "runtime/kernel", "hal", "arch/" & Arch,
+                        "platform/qemu-" & Arch, "firmware/acpi", "firmware/devicetree", "firmware/uefi", "boot/common", "boot/uefi", "kernel");
+   for Object_Dir use "build/" & Arch & "/" & Kind & "/obj";
+   package Compiler is
+      for Driver ("Ada") use external ("ADA_CC", "gcc");
+      Common := ("-gnat2022", "-gnatp", "-gnatn", "-O2", "-g",
+                 "-fno-stack-protector", "-fno-pie", "-fno-strict-aliasing",
+                 "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
+                 "-ffunction-sections", "-fdata-sections");
+      case Arch is
+         when "x86_64" =>
+            for Default_Switches ("Ada") use Common &
+              ("-mabi=ms", "-maccumulate-outgoing-args", "-mno-red-zone", "-mgeneral-regs-only", "-fPIC");
+         when "aarch64" =>
+            for Default_Switches ("Ada") use Common &
+              ("-mgeneral-regs-only", "-fPIC");
+         when "riscv64" =>
+            for Default_Switches ("Ada") use Common &
+              ("-march=rv64imac_zicsr_zifencei", "-mabi=lp64",
+               "-mcmodel=medany", "-mno-relax", "-fPIC");
+         when "loongarch64" =>
+            for Default_Switches ("Ada") use Common &
+              ("-march=loongarch64", "-mabi=lp64d", "-fPIC");
+         when others => null;
+      end case;
+   end Compiler;
+end Freestanding;
