@@ -1,6 +1,10 @@
 with Ada.Text_IO;
 with Test_Process;
 with Test_Heap;
+with Test_Copies;
+with Test_Drivers;
+with Test_Sync;
+with Test_Jobs;
 with AxiomOS.Types; use AxiomOS.Types;
 with AxiomOS.Memory.Physical;
 with AxiomOS.Memory.Virtual;
@@ -10,13 +14,14 @@ with AxiomOS.Scheduler.Run_Queues;
 with AxiomOS.VFS.Tmpfs;
 with AxiomOS.VFS.Paths;
 with AxiomOS.VFS.Ustar;
+with AxiomOS.VFS.Mounts;
 with AxiomOS.IO.Handles;
 with AxiomOS.IO.Streams;
 with AxiomOS.Drivers.Registry;
 with AxiomOS.Drivers.Lifecycle;
 procedure AxiomOS_Tests is
    use AxiomOS;
-   use type U64, U32, U8, SMP.CPU_State, IO.Handle;
+   use type U64, U32, U8, I64, SMP.CPU_State, IO.Handle;
    PMM : Memory.Physical.Allocator;
    Space : Memory.Virtual.Address_Space;
    CPUs : SMP.Manager;
@@ -29,6 +34,8 @@ procedure AxiomOS_Tests is
    T : U32;
    N : VFS.Node_Id;
    H, Old : IO.Handle;
+   Copy : IO.Handle;
+   Position : U64;
    Count, Id, Driver : Natural;
    Buffer : Bytes (0 .. 7);
    Path : String (1 .. 127);
@@ -51,6 +58,11 @@ begin
    pragma Assert (S = Invalid_Argument);
    Memory.Physical.Allocate (PMM, 17, 4096, Memory.Physical.Kernel, B, S);
    pragma Assert (S = Out_Of_Memory and B = 0);
+   Memory.Physical.Allocate_Below (PMM, 1, 4096, 16#1000#, Memory.Physical.Kernel, B, S);
+   pragma Assert (S = Out_Of_Memory and B = 0);
+   Memory.Physical.Allocate_Below (PMM, 1, 4096, 16#2000#, Memory.Physical.Kernel, B, S);
+   pragma Assert (S = Success and B = 16#1000#);
+   Memory.Physical.Release (PMM, B, 1, S);
    Ada.Text_IO.Put_Line ("PASS physical regions, ownership, alignment, references, OOM");
 
    Memory.Virtual.Map (Space, 16#1000#, 16#4000#, 4096,
@@ -111,7 +123,7 @@ begin
    IO.Streams.Write (Handles, FS, H, (65, 100, 97), Count, S);
    pragma Assert (S = Success and Count = 3);
    Old := H;
-   IO.Handles.Close (Handles, H, S);
+   IO.Handles.Close (Handles, FS, H, S);
    IO.Handles.Open (Handles, FS, "/tmp/hello", (True, False), H, S);
    pragma Assert (S = Success and H /= Old);
    IO.Streams.Read (Handles, FS, H, Buffer, Count, S);
@@ -120,6 +132,41 @@ begin
    pragma Assert (S = Bad_Handle);
    IO.Streams.Write (Handles, FS, H, (1 => 0), Count, S);
    pragma Assert (S = Permission_Denied);
+   IO.Streams.Seek (Handles, FS, H, -2, IO.Streams.Ending, Position, S);
+   pragma Assert (S = Success and Position = 1);
+   IO.Handles.Duplicate (Handles, FS, H, (True, False), Copy, S);
+   pragma Assert (S = Success);
+   IO.Streams.Read (Handles, FS, Copy, Buffer, Count, S);
+   pragma Assert (S = Success and Count = 2 and Buffer (0 .. 1) = (100, 97));
+   IO.Streams.Read (Handles, FS, H, Buffer, Count, S);
+   pragma Assert (S = Success and Count = 2);
+   IO.Streams.Seek (Handles, FS, H, I64'First, IO.Streams.Current, Position, S);
+   pragma Assert (S = Invalid_Argument);
+   IO.Handles.Duplicate (Handles, FS, H, (True, True), Old, S);
+   pragma Assert (S = Permission_Denied);
+   IO.Handles.Close_All (Handles, FS);
+   VFS.Mounts.Mount_Tmpfs (FS, "/tmp", S);
+   pragma Assert (S = Success);
+   VFS.Mounts.Lookup (FS, "/tmp/hello", N, S);
+   pragma Assert (S = Not_Found); -- Covered file belongs to the parent mount.
+   VFS.Tmpfs.Create (FS, "/tmp/nested", VFS.Directory, N, S);
+   VFS.Mounts.Mount_Tmpfs (FS, "/tmp/nested", S);
+   pragma Assert (S = Success);
+   VFS.Tmpfs.Create (FS, "/tmp/nested/file", VFS.Regular, N, S);
+   IO.Handles.Open (Handles, FS, "/tmp/nested/file", (True, True), H, S);
+   pragma Assert (S = Success);
+   VFS.Mounts.Unmount (FS, "/tmp/nested", S);
+   pragma Assert (S = Busy);
+   VFS.Mounts.Unmount (FS, "/tmp", S);
+   pragma Assert (S = Busy);
+   IO.Handles.Close_All (Handles, FS);
+   VFS.Mounts.Unmount (FS, "/tmp/nested", S);
+   pragma Assert (S = Success);
+   VFS.Mounts.Unmount (FS, "/tmp", S);
+   pragma Assert (S = Success);
+   VFS.Mounts.Lookup (FS, "/tmp/hello", N, S);
+   pragma Assert (S = Success); -- Unmount exposes the covered file again.
+   Ada.Text_IO.Put_Line ("PASS mount namespaces, nested/busy unmount, seek, duplicate, close-all");
    VFS.Ustar.Mount_Ustar (FS, (0 .. 1023 => 0), S);
    pragma Assert (S = Success);
    VFS.Ustar.Mount_Ustar (FS, (0 .. 511 => 0), S);
@@ -139,6 +186,10 @@ begin
       (Drivers.Discovered, Drivers.Serial, 0, 0, 16#1800#, 4096, 1, 0), Id, S);
    pragma Assert (S = Busy);
    Ada.Text_IO.Put_Line ("PASS driver matching, lifecycle, resource conflicts");
+   Test_Drivers.Run;
+   Test_Sync.Run;
+   Test_Jobs.Run;
+   Test_Copies.Run;
    Test_Heap.Run;
    Test_Process.Run;
    Ada.Text_IO.Put_Line ("ALL HOSTED TESTS PASSED");
