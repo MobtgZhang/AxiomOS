@@ -32,6 +32,7 @@ for value in "$cpus" "$timeout"; do
     if [ "$value" -le 0 ]; then echo 'cpus and timeout must be positive' >&2; exit 2; fi
 done
 if [ "$cpus" -gt 64 ]; then echo 'cpus must be 1..64' >&2; exit 2; fi
+python3 scripts/check-architecture.py
 alr -n build
 alr -n run
 scripts/test-storage.sh

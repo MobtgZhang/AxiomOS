@@ -57,7 +57,9 @@ def build(arch):
     directory = ROOT / 'build' / arch
     user_objects = directory / 'user/obj'
     for unit, entry, output_name in [('user_init.adb', 'user_entry', 'init'),
-                                      ('isolation_probe.adb', 'probe_entry', 'isolation-probe')]:
+                                      ('isolation_probe.adb', 'probe_entry', 'isolation-probe'),
+                                      ('memory_probe.adb', 'memory_probe_entry', 'memory-probe'),
+                                      ('unmap_probe.adb', 'unmap_probe_entry', 'unmap-probe')]:
         run(['gprbuild', '-p', '-c', '-P', 'user.gpr', f'-XARCH={arch}',
              f'-XADA_CC={cc}', unit])
         run([cc, *flags, '-c', ROOT / f'arch/{arch}/syscall.S', '-o', user_objects / 'syscall.o'])
@@ -78,7 +80,7 @@ def build(arch):
         run([cc, *flags, '-c', '-fPIC', *(['-DAXIOM_LOADER'] if kind == 'loader' else []), ROOT / f'arch/{arch}/cpu.S', '-o', asm])
         run([cc, *flags, '-c', '-fPIC', ROOT / f'platform/qemu-{arch}/serial.S', '-o', objects / 'serial.o'])
         if kind == 'kernel':
-            run([cc, *flags, '-c', '-fPIC', ROOT / f'platform/qemu-{arch}/ap.S', '-o', objects / 'ap.o'])
+            run([cc, *flags, '-c', '-fPIC', ROOT / f'arch/{arch}/secondary.S', '-o', objects / 'ap.o'])
         if kind == 'kernel':
             run([cc, *flags, '-c', '-fPIC', ROOT / f'arch/{arch}/context.S', '-o', objects / 'context.o'])
         output = directory / f'{kind}.elf'
@@ -102,7 +104,9 @@ def build(arch):
         for name, contents in [('etc/', None), ('etc/motd', b'AxiomOS Ada kernel\n'),
                                ('boot/', None), ('boot/version', b'0.1.0-dev\n'),
                                ('bin/', None), ('bin/init', (directory / 'init.elf').read_bytes()),
-                               ('bin/isolation-probe', (directory / 'isolation-probe.elf').read_bytes())]:
+                               ('bin/isolation-probe', (directory / 'isolation-probe.elf').read_bytes()),
+                               ('bin/memory-probe', (directory / 'memory-probe.elf').read_bytes()),
+                               ('bin/unmap-probe', (directory / 'unmap-probe.elf').read_bytes())]:
             info = tarfile.TarInfo(name)
             info.mtime = 0
             info.mode = 0o755 if contents is None else 0o444

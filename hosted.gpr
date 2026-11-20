@@ -1,8 +1,9 @@
 project Hosted is
-   for Source_Dirs use ("kernel/common", "boot/common", "kernel/memory", "kernel/smp",
+   for Source_Dirs use ("kernel/common", "boot/common", "runtime/kernel", "kernel/memory", "kernel/smp",
                         "kernel/storage", "kernel/scheduler", "kernel/vfs", "kernel/io",
                         "kernel/drivers", "kernel/process", "kernel/syscall",
-                        "kernel/ipc", "kernel/security", "tests/hosted");
+                        "kernel/ipc", "kernel/security", "kernel/sync", "kernel/jobs",
+                        "tests/hosted");
    for Object_Dir use "build/hosted/obj";
    for Exec_Dir use "build/hosted";
    for Main use ("axiomos_tests.adb");

@@ -17,6 +17,9 @@ FIRMWARE = {
                     '/usr/share/qemu-efi-loongarch64/QEMU_VARS.fd'),
 }
 MARKERS = ['AXIOM:MENU:READY', 'AXIOM:UEFI:EXITED', 'AXIOM:KERNEL:ENTER',
+           'AXIOM:MMU:LEAF:PASS', 'AXIOM:BLOCK:RESET:PASS', 'AXIOM:BLOCK:SMP:PASS', 'AXIOM:CLOCK:PASS', 'AXIOM:SMP:WORK:PASS',
+           'AXIOM:USER:MEMORY:PASS', 'AXIOM:USER:PROTECT:PASS', 'AXIOM:USER:UNMAP:PASS',
+           'AXIOM:USER:FILES:PASS', 'AXIOM:USER:HANDLES:PASS',
            'AXIOM:PMM:PASS', 'AXIOM:HEAP:PASS', 'AXIOM:MMU:ROLLBACK:PASS',
            'AXIOM:VFS:PASS', 'AXIOM:IO:PASS',
            'AXIOM:DRIVERS:PASS', 'AXIOM:BLOCK:HARDWARE:PASS', 'AXIOM:ROOT:EXT4:PASS',
@@ -54,6 +57,9 @@ def run(arch, smoke=False, timeout=120, cpus=2, graphic=False):
     if not smoke:
         return subprocess.call(args, cwd=ROOT)
     log = directory / 'qemu-boot.log'
+    result_path = directory / 'qemu-result.json'
+    # An interrupted rerun must never leave an older success beside a new log.
+    result_path.unlink(missing_ok=True)
     started = time.monotonic()
     outcome = 'timeout'
     with log.open('wb') as output:
@@ -84,7 +90,7 @@ def run(arch, smoke=False, timeout=120, cpus=2, graphic=False):
               'cpus_configured': cpus, 'command': args,
               'aps_observed': log.read_bytes().count(b'AXIOM:SMP:AP:ONLINE'),
               'markers': {m: m.encode() in log.read_bytes() for m in MARKERS}}
-    (directory / 'qemu-result.json').write_text(json.dumps(report, indent=2) + '\n')
+    result_path.write_text(json.dumps(report, indent=2) + '\n')
     print(f'{arch}: {outcome}; log: {log}', flush=True)
     if outcome != 'passed':
         print(log.read_text(errors='replace')[-10000:])

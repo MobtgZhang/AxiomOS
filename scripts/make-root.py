@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def make(arch):
     directory = ROOT / 'build' / arch
     tree = directory / 'root-tree'
-    for name in ('bin', 'etc', 'boot'):
+    for name in ('bin', 'etc', 'boot', 'tmp', 'dev'):
         (tree / name).mkdir(parents=True, exist_ok=True)
     (tree / 'etc/motd').write_bytes(b'AxiomOS Ada kernel\n')
     (tree / 'boot/filesystem').write_bytes(b'EXT4 native root\n')
-    for name in ('init', 'isolation-probe'):
+    for name in ('init', 'isolation-probe', 'memory-probe', 'unmap-probe'):
         (tree / 'bin' / name).write_bytes((directory / f'{name}.elf').read_bytes())
     disk = directory / 'root.ext4'
     with disk.open('wb') as output:

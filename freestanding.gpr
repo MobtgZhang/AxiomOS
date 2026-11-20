@@ -5,7 +5,8 @@ project Freestanding is
    for Source_Dirs use ("kernel/common", "kernel/memory", "kernel/smp",
                         "kernel/storage", "kernel/scheduler", "kernel/vfs", "kernel/io",
                         "kernel/drivers", "kernel/process", "kernel/syscall",
-                        "kernel/ipc", "kernel/security", "runtime/kernel", "hal", "arch/" & Arch,
+                        "kernel/ipc", "kernel/security", "kernel/sync", "kernel/jobs",
+                        "runtime/kernel", "hal", "arch/" & Arch,
                         "platform/qemu-" & Arch, "firmware/acpi", "firmware/devicetree", "firmware/uefi", "boot/common", "boot/uefi", "kernel");
    for Object_Dir use "build/" & Arch & "/" & Kind & "/obj";
    package Compiler is
