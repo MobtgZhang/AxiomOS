@@ -50,7 +50,9 @@ package body AxiomOS.HAL.MMU is
       Slot, D, Next, Flags, Large_Base : U64;
    begin
       Result := Invalid_Argument;
-      if not Aligned (Virtual_Base, 4096) or else not Aligned (Physical_Base, 4096)
+      if Root = 0 or else not Aligned (Root, Page_Size) or else
+        Physical_Base >= 2 ** 48 or else Virtual_Base >= 2 ** 48 or else
+        not Aligned (Virtual_Base, 4096) or else not Aligned (Physical_Base, 4096)
         or else not Rights.Readable or else (Rights.Writable and Rights.Executable)
         or else (Rights.Device and Rights.Executable) or else Virtual_Base >= 2 ** 48
       then return; end if;
@@ -83,6 +85,79 @@ package body AxiomOS.HAL.MMU is
       Raw.Store64 (Table + (Virtual_Base / 4096 mod 512) * 8, Physical_Base or Flags);
       Result := Success;
    end Map_Page;
+   procedure Query_Page (Root, Virtual_Base : U64; Physical_Base : out U64;
+                         Rights : out Memory.Virtual.Permissions; Result : out Status) is
+      Table : U64 := Root;
+      D, Span : U64;
+   begin
+      Physical_Base := 0; Rights := (others => False); Result := Invalid_Argument;
+      if Root = 0 or else not Aligned (Root, Page_Size) or else Virtual_Base >= 2 ** 48 then return; end if;
+      for Level in reverse 0 .. 3 loop
+         D := Raw.Load64 (Table + (Interfaces.Shift_Right (Virtual_Base, 12 + Level * 9) and 511) * 8);
+         if (D and 1) = 0 then Result := Not_Found; return; end if;
+         if Level = 0 or else (D and 2) = 0 then
+            Span := 2 ** (12 + Level * 9);
+            Physical_Base := (D and Mask) / Span * Span + Virtual_Base mod Span;
+            Rights.Readable := True; Rights.User := (D and 64) /= 0;
+            Rights.Writable := (D and 128) = 0; Rights.Executable := (D and (if Rights.User then 2 ** 54 else 2 ** 53)) = 0;
+            Rights.Device := (D and 4) /= 0; Result := Success; return;
+         end if;
+         Table := D and Mask;
+      end loop;
+      Result := Not_Found;
+   end Query_Page;
+
+   procedure Unmap_Page (Pages : in out Memory.Physical.Allocator;
+                         Root, Virtual_Base : U64; Result : out Status) is
+      type Path is array (Natural range 0 .. 3) of U64;
+      Tables, Slots : Path := (others => 0);
+      Table : U64 := Root;
+      D : U64;
+      Lowest : Natural := 3;
+      Empty : Boolean;
+      S : Status;
+   begin
+      Result := Invalid_Argument;
+      if Root = 0 or else not Aligned (Root, Page_Size) or else
+        not Aligned (Virtual_Base, Page_Size) or else Virtual_Base >= 2 ** 48 then return; end if;
+      Result := Not_Found;
+      for Level in reverse 0 .. 3 loop
+         Lowest := Level; Tables (Level) := Table;
+         Slots (Level) := Table + (Interfaces.Shift_Right (Virtual_Base, 12 + 9 * Level) and 511) * 8;
+         D := Raw.Load64 (Slots (Level));
+         exit when (D and 1) = 0;
+         if Level = 0 or else (D and 2) = 0 then
+            if Level /= 0 or else not ((D and 64) /= 0) then Result := Permission_Denied; return; end if;
+            Raw.Store64 (Slots (Level), 0); Result := Success; exit;
+         end if;
+         Table := D and Mask;
+      end loop;
+      -- Also prune a partially built path after a failed Map_Page allocation.
+      for Level in Lowest .. 2 loop
+         Empty := True;
+         for I in 0 .. 511 loop
+            if Raw.Load64 (Tables (Level) + U64 (I) * 8) /= 0 then Empty := False; exit; end if;
+         end loop;
+         exit when not Empty;
+         Raw.Store64 (Slots (Level + 1), 0);
+         Memory.Physical.Release (Pages, Tables (Level), 1, S);
+      end loop;
+   end Unmap_Page;
+
+   procedure Protect_Page (Pages : in out Memory.Physical.Allocator;
+                           Root, Virtual_Base : U64;
+                           Rights : Memory.Virtual.Permissions; Result : out Status) is
+      PA : U64;
+      Previous : Memory.Virtual.Permissions;
+   begin
+      Result := Invalid_Argument;
+      if not Aligned (Virtual_Base, Page_Size) or else not Rights.User then return; end if;
+      Query_Page (Root, Virtual_Base, PA, Previous, Result);
+      if Result /= Success then return; end if;
+      if not Previous.User then Result := Permission_Denied; return; end if;
+      Map_Page (Pages, Root, Virtual_Base, PA, Rights, Result);
+   end Protect_Page;
+
    procedure Activate (Root : U64) is
    begin Switch_Root (Root); end Activate;
    procedure Destroy (Pages : in out Memory.Physical.Allocator; Root : U64) is

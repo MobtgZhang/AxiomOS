@@ -68,6 +68,34 @@ axiom_enter_user:
     move $sp, $a1
     move $a0, $zero
     move $a1, $zero
+    move $ra, $zero
+    move $tp, $zero
+    move $fp, $zero
+    move $r21, $zero
+    move $a2, $zero
+    move $a3, $zero
+    move $a4, $zero
+    move $a5, $zero
+    move $a6, $zero
+    move $a7, $zero
+    move $t0, $zero
+    move $t1, $zero
+    move $t2, $zero
+    move $t3, $zero
+    move $t4, $zero
+    move $t5, $zero
+    move $t6, $zero
+    move $t7, $zero
+    move $t8, $zero
+    move $s0, $zero
+    move $s1, $zero
+    move $s2, $zero
+    move $s3, $zero
+    move $s4, $zero
+    move $s5, $zero
+    move $s6, $zero
+    move $s7, $zero
+    move $s8, $zero
     ertn
 .global axiom_leave_user
 axiom_leave_user:

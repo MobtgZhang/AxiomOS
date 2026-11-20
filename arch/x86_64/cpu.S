@@ -39,6 +39,16 @@ axiom_exchange:
 axiom_release:
     movl $0, (%rcx)
     ret
+.globl axiom_cas
+axiom_cas:
+    mov %edx, %eax
+    lock cmpxchg %r8d, (%rcx)
+    ret
+.globl axiom_fetch_add
+axiom_fetch_add:
+    mov %edx, %eax
+    lock xadd %eax, (%rcx)
+    ret
 .section .note.GNU-stack,"",@progbits
 .text
 .globl axiom_apic_id
@@ -83,3 +93,48 @@ axiom_fence:
     mfence
     ret
 
+
+# Calibrate the invariant TSC with the q35 PIT channel 2 (10 ms).
+# Bounded polling; no firmware services or interrupt handlers are required.
+.global axiom_counter_frequency
+axiom_counter_frequency:
+    inb $0x61, %al
+    mov %al, %r8b
+    and $0xfc, %al
+    outb %al, $0x61
+    mov $0xb0, %al
+    outb %al, $0x43
+    mov $0x9c, %al
+    outb %al, $0x42
+    mov $0x2e, %al
+    outb %al, $0x42
+    lfence
+    rdtsc
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, %r9
+    mov %r8b, %al
+    and $0xfc, %al
+    or $1, %al
+    outb %al, $0x61
+    mov $10000000, %r10d
+1:  inb $0x61, %al
+    test $0x20, %al
+    jnz 2f
+    pause
+    dec %r10d
+    jnz 1b
+    xor %r9d, %r9d
+2:  lfence
+    rdtsc
+    shl $32, %rdx
+    or %rdx, %rax
+    sub %r9, %rax
+    imul $100, %rax, %r11
+    mov %r8b, %al
+    outb %al, $0x61
+    mov %r11, %rax
+    test %r9, %r9
+    jnz 3f
+    xor %eax, %eax
+3:  ret

@@ -3,10 +3,6 @@
 axiom_bootstrap_id:
     csrrd $a0, 0x20
     jr $ra
-.global axiom_ticks
-axiom_ticks:
-    rdtime.d $a0, $zero
-    jr $ra
 .global axiom_cpu_on
 axiom_cpu_on:
     la.local $t0, axiom_ap_start

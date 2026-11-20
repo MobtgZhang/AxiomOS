@@ -39,10 +39,34 @@ axiom_release:
     fence rw,w
     sw zero, (a0)
     ret
+.globl axiom_cas
+axiom_cas:
+1:  lr.w.aq a3, (a0)
+    xor a5, a3, a1
+    slli a5, a5, 32
+    bnez a5, 2f
+    sc.w.rl a4, a2, (a0)
+    bnez a4, 1b
+2:  mv a0, a3
+    ret
+.globl axiom_fetch_add
+axiom_fetch_add:
+1:  lr.w.aq a2, (a0)
+    add a3, a2, a1
+    sc.w.rl a4, a3, (a0)
+    bnez a4, 1b
+    mv a0, a2
+    ret
 .section .note.GNU-stack,"",@progbits
 
 .text
 .global axiom_fence
 axiom_fence:
     fence rw,rw
+    ret
+
+.text
+.global axiom_ticks
+axiom_ticks:
+    rdtime a0
     ret

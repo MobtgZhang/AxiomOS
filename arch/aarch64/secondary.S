@@ -4,10 +4,6 @@ axiom_bootstrap_id:
     mrs x0, mpidr_el1
     and x0, x0, #0xffffff
     ret
-.global axiom_ticks
-axiom_ticks:
-    mrs x0, cntvct_el0
-    ret
 .global axiom_cpu_on
 axiom_cpu_on:
     stp x29, x30, [sp, #-16]!

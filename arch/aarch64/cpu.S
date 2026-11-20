@@ -61,10 +61,38 @@ axiom_exchange:
 axiom_release:
     stlr wzr, [x0]
     ret
+.globl axiom_cas
+axiom_cas:
+1:  ldaxr w3, [x0]
+    cmp w3, w1
+    b.ne 2f
+    stlxr w4, w2, [x0]
+    cbnz w4, 1b
+2:  mov w0, w3
+    ret
+.globl axiom_fetch_add
+axiom_fetch_add:
+1:  ldaxr w3, [x0]
+    add w4, w3, w1
+    stlxr w5, w4, [x0]
+    cbnz w5, 1b
+    mov w0, w3
+    ret
 .section .note.GNU-stack,"",@progbits
 
 .text
 .global axiom_fence
 axiom_fence:
     dsb sy
+    ret
+
+.text
+.global axiom_ticks
+axiom_ticks:
+    mrs x0, cntvct_el0
+    ret
+
+.global axiom_counter_frequency
+axiom_counter_frequency:
+    mrs x0, cntfrq_el0
     ret

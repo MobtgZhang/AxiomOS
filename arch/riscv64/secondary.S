@@ -4,10 +4,6 @@
 axiom_bootstrap_id:
     mv a0, tp
     ret
-.global axiom_ticks
-axiom_ticks:
-    rdtime a0
-    ret
 .global axiom_cpu_on
 axiom_cpu_on:
     mv a2, a1

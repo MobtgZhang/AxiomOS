@@ -118,6 +118,9 @@ axiom_syscall_stub:
     iretq
 .global axiom_page_fault_stub
 axiom_page_fault_stub:
+    cld
+    testb $3, 16(%rsp)
+    jz axiom_fault_stub
     mov %cr2, %rcx
     mov (%rsp), %rdx
     and $-16, %rsp
