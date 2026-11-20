@@ -4,6 +4,55 @@ package body AxiomOS.Firmware.DeviceTree is
    function BE32 (P : U64) return U64 is
      (U64 (Raw.Load8 (P)) * 2 ** 24 + U64 (Raw.Load8 (P + 1)) * 2 ** 16 +
       U64 (Raw.Load8 (P + 2)) * 256 + U64 (Raw.Load8 (P + 3)));
+   function Timebase (Base : U64) return U64 is
+      Total, Cursor, Last, Strings, String_End, Token, Size, Name : U64;
+      Depth : Natural := 0;
+      In_CPUs : Boolean := False;
+      function Text (P, Limit : U64; Value : String) return Boolean is
+      begin
+         if P >= Limit or else U64 (Value'Length) >= Limit - P then return False; end if;
+         for I in Value'Range loop
+            if Raw.Load8 (P + U64 (I - Value'First)) /= Character'Pos (Value (I)) then return False; end if;
+         end loop;
+         return Raw.Load8 (P + U64 (Value'Length)) = 0;
+      end Text;
+   begin
+      if Base = 0 or else BE32 (Base) /= 16#D00DFEED# then return 0; end if;
+      Total := BE32 (Base + 4);
+      if Total < 40 or else Total > 2 ** 20 or else not Fits (Base, Total) then return 0; end if;
+      Cursor := BE32 (Base + 8); Strings := BE32 (Base + 12);
+      if Cursor > Total or else BE32 (Base + 36) > Total - Cursor or else
+         Strings > Total or else BE32 (Base + 32) > Total - Strings then return 0; end if;
+      Last := Base + Cursor + BE32 (Base + 36);
+      String_End := Base + Strings + BE32 (Base + 32);
+      Cursor := Base + Cursor; Strings := Base + Strings;
+      while Cursor < Last and then Last - Cursor >= 4 loop
+         Token := BE32 (Cursor); Cursor := Cursor + 4;
+         case Token is
+            when 1 =>
+               Depth := Depth + 1;
+               if Depth > 64 then return 0; end if;
+               if Depth = 2 then In_CPUs := Text (Cursor, Last, "cpus"); end if;
+               while Cursor < Last and then Raw.Load8 (Cursor) /= 0 loop Cursor := Cursor + 1; end loop;
+               if Cursor = Last then return 0; end if;
+               Cursor := (Cursor + 4) / 4 * 4;
+            when 2 =>
+               if Depth = 0 then return 0; end if;
+               if Depth = 2 then In_CPUs := False; end if;
+               Depth := Depth - 1;
+            when 3 =>
+               if Last - Cursor < 8 then return 0; end if;
+               Size := BE32 (Cursor); Name := BE32 (Cursor + 4); Cursor := Cursor + 8;
+               if Size > Last - Cursor or else Name >= String_End - Strings then return 0; end if;
+               if In_CPUs and then Depth = 2 and then Size = 4 and then
+                 Text (Strings + Name, String_End, "timebase-frequency") then return BE32 (Cursor); end if;
+               Cursor := (Cursor + Size + 3) / 4 * 4;
+            when 4 => null;
+            when others => return 0;
+         end case;
+      end loop;
+      return 0;
+   end Timebase;
    procedure CPUs (Base : U64; List : out ACPI.Topology; Result : out Status) is
       Total, Struct, Strings, End_Struct, End_Strings, Cursor, Token, Size, Name, Id : U64;
       Depth : Natural := 0;

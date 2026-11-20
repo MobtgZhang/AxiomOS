@@ -1,6 +1,6 @@
 with System;
 with AxiomOS.Types; use AxiomOS.Types;
-package AxiomOS.Raw is
+package AxiomOS.Raw with Preelaborate is
    function Address (Value : U64) return System.Address;
    function Number (Value : System.Address) return U64;
    function Load8 (Base : U64) return U8;

@@ -13,7 +13,7 @@ package body AxiomOS.Memory.Physical is
       Pages : U64;
    begin
       Result := Invalid_Argument;
-      if not Fits (Base, Length) or else Base = 0 or else
+      if not Fits (Base, Length) or else Base = 0 or else Length > U64'Last - Base or else
         not Aligned (Base, Page_Size) or else not Aligned (Length, Page_Size)
       then
          return;
@@ -44,8 +44,8 @@ package body AxiomOS.Memory.Physical is
       Result := Success;
    end Add_Region;
 
-   procedure Allocate (State : in out Allocator; Count : Positive;
-                       Alignment : U64; Kind : Owner;
+   procedure Allocate_Below (State : in out Allocator; Count : Positive;
+                       Alignment, Limit : U64; Kind : Owner;
                        Address : out U64; Result : out Status) is
       Run : Natural;
    begin
@@ -73,7 +73,9 @@ package body AxiomOS.Memory.Physical is
                then
                   Run := Run + 1;
                end if;
-               if Run = Count then
+               if Run = Count and then
+                 R.Base + U64 (P) * Page_Size < Limit and then
+                 Page_Size <= Limit - (R.Base + U64 (P) * Page_Size) then
                   Address := R.Base + U64 (P + 1 - Count) * Page_Size;
                   for J in P + 1 - Count .. P loop
                      State.Metadata (R.Offset + J) := (Kind, 1);
@@ -85,6 +87,13 @@ package body AxiomOS.Memory.Physical is
             end loop;
          end;
       end loop;
+   end Allocate_Below;
+
+   procedure Allocate (State : in out Allocator; Count : Positive;
+                       Alignment : U64; Kind : Owner;
+                       Address : out U64; Result : out Status) is
+   begin
+      Allocate_Below (State, Count, Alignment, U64'Last, Kind, Address, Result);
    end Allocate;
 
    function Locate (State : Allocator; Address : U64; Count : Positive)

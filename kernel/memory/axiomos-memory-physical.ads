@@ -25,6 +25,10 @@ package AxiomOS.Memory.Physical with Preelaborate is
    procedure Allocate (State : in out Allocator; Count : Positive;
                        Alignment : U64; Kind : Owner;
                        Address : out U64; Result : out Status);
+   -- Exclusive upper bound for DMA and low-memory startup constraints.
+   procedure Allocate_Below (State : in out Allocator; Count : Positive;
+                             Alignment, Limit : U64; Kind : Owner;
+                             Address : out U64; Result : out Status);
    procedure Release (State : in out Allocator; Address : U64;
                       Count : Positive; Result : out Status);
    procedure Retain (State : in out Allocator; Address : U64;
