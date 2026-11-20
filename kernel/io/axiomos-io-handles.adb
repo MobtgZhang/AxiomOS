@@ -37,6 +37,7 @@ package body AxiomOS.IO.Handles is
             Table.Entries (I).Node := Node;
             Table.Entries (I).Offset := 0;
             Table.Entries (I).Permissions := Permissions;
+            FS.Nodes (Node).Open_Count := FS.Nodes (Node).Open_Count + 1;
             Value := Handle (U64 (Table.Entries (I).Generation) * 256 + U64 (I));
             Result := Success;
             return;
@@ -44,15 +45,51 @@ package body AxiomOS.IO.Handles is
       end loop;
       Result := No_Space;
    end Open;
-   procedure Close (Table : in out Handle_Table; Value : Handle;
+   procedure Close (Table : in out Handle_Table; FS : in out VFS.File_System; Value : Handle;
                     Result : out Status) is
       I : constant Natural := Resolve (Table, Value);
    begin
       Result := Bad_Handle;
       if I = 0 then return; end if;
+      if FS.Nodes (Table.Entries (I).Node).Open_Count = 0 then Result := Corrupt; return; end if;
+      FS.Nodes (Table.Entries (I).Node).Open_Count := FS.Nodes (Table.Entries (I).Node).Open_Count - 1;
       Table.Entries (I).Active := False;
       -- A generation that wraps to zero permanently retires this slot.
       Table.Entries (I).Generation := Table.Entries (I).Generation + 1;
       Result := Success;
    end Close;
+   procedure Close_All (Table : in out Handle_Table; FS : in out VFS.File_System) is
+      S : Status;
+   begin
+      for I in Table.Entries'Range loop
+         if Table.Entries (I).Active then
+            Close (Table, FS, Handle (U64 (Table.Entries (I).Generation) * 256 + U64 (I)), S);
+         end if;
+      end loop;
+   end Close_All;
+   procedure Duplicate (Table : in out Handle_Table; FS : in out VFS.File_System;
+                        Source : Handle; Permissions : Rights;
+                        Value : out Handle; Result : out Status) is
+      J : constant Natural := Resolve (Table, Source);
+   begin
+      Value := Invalid_Handle; Result := Bad_Handle;
+      if J = 0 then return; end if;
+      Result := Permission_Denied;
+      if (Permissions.Read and then not Table.Entries (J).Permissions.Read) or else
+        (Permissions.Write and then not Table.Entries (J).Permissions.Write) then return; end if;
+      Result := Invalid_Argument;
+      if not Permissions.Read and not Permissions.Write then return; end if;
+      for I in Table.Entries'Range loop
+         if not Table.Entries (I).Active and then Table.Entries (I).Generation /= 0 then
+            Table.Entries (I).Node := Table.Entries (J).Node;
+            Table.Entries (I).Offset := Table.Entries (J).Offset;
+            Table.Entries (I).Permissions := Permissions;
+            Table.Entries (I).Active := True;
+            FS.Nodes (Table.Entries (I).Node).Open_Count := FS.Nodes (Table.Entries (I).Node).Open_Count + 1;
+            Value := Handle (U64 (Table.Entries (I).Generation) * 256 + U64 (I));
+            Result := Success; return;
+         end if;
+      end loop;
+      Result := No_Space;
+   end Duplicate;
 end AxiomOS.IO.Handles;
