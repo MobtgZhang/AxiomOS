@@ -4,6 +4,9 @@ package AxiomOS.Drivers.Virtio_Block is
    procedure Initialize (Info : Boot.Protocol.Boot_Info;
                          Pages : in out Memory.Physical.Allocator; Result : out Status);
    procedure Read (Offset : U64; Buffer : out Bytes; Result : out Status);
+   -- Lifecycle calls are externally serialized. Read serializes the queue
+   -- across CPUs; shutdown frees DMA only after a confirmed device reset.
+   procedure Shutdown (Pages : in out Memory.Physical.Allocator; Result : out Status);
    function Capacity return U64;
    function Common_Address return U64;
    function Notify_Address return U64;

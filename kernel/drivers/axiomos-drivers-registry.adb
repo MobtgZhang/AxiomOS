@@ -2,7 +2,9 @@ package body AxiomOS.Drivers.Registry is
    use type U16, U64;
    procedure Register_Driver (State : in out Manager; Class : Device_Class;
                               Vendor, Product : U16; Id : out Natural;
-                              Result : out Status) is
+                              Result : out Status;
+                              Start : Lifecycle_Action := null;
+                              Stop : Lifecycle_Action := null) is
    begin
       Id := 0;
       for D of State.Drivers loop
@@ -12,7 +14,7 @@ package body AxiomOS.Drivers.Registry is
       end loop;
       for I in State.Drivers'Range loop
          if not State.Drivers (I).Active then
-            State.Drivers (I) := (True, Class, Vendor, Product);
+            State.Drivers (I) := (True, Class, Vendor, Product, Start, Stop);
             Id := I;
             Result := Success;
             return;
