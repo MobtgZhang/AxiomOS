@@ -6,5 +6,6 @@ package body AxiomOS.Kernel.State is
       Handles := (others => <>);
       CPUs := (others => <>);
       Devices := (others => <>);
+      Jobs.Initialize (Job_Table);
    end Initialize;
 end AxiomOS.Kernel.State;
