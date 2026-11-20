@@ -79,6 +79,8 @@ package body Test_Process is
       pragma Assert (S = Would_Block);
       Calls.Invoke (Processes, Id, FS, 0, (42, 0, 0, 0, 0), Reply);
       pragma Assert (Reply.Error = Success);
+      pragma Assert (FS.Nodes (N).Open_Count = 0);
+      pragma Assert (IO.Handles.Resolve (Processes.Entries (Index).Handles, H) = 0);
       Process.Table.Wait (Processes, Process.Kernel_PID, Id, Code, S);
       pragma Assert (S = Success and Code = 42 and Process.Table.Resolve (Processes, Id) = 0);
       Process.Table.Create (Processes, Process.Kernel_PID, (1000, 1000), Next, S);

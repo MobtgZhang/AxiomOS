@@ -2,8 +2,10 @@ with AxiomOS.Process.Table;
 with AxiomOS.IO.Handles;
 with AxiomOS.IO.Streams;
 with AxiomOS.Memory.Virtual;
+with Ada.Unchecked_Conversion;
 package body AxiomOS.Syscall.Dispatch is
    use type U64, U8, AxiomOS.Process.Lifecycle;
+   function Signed is new Ada.Unchecked_Conversion (U64, I64);
    procedure Invoke (Processes : in out AxiomOS.Process.Manager;
                      Caller : AxiomOS.Process.PID;
                      Files : in out AxiomOS.VFS.File_System;
@@ -23,7 +25,7 @@ package body AxiomOS.Syscall.Dispatch is
       case Number is
          when 0 =>
             AxiomOS.Process.Table.Exit_Process
-              (Processes, Caller, U32 (Args (0) mod 2 ** 32), Reply.Error);
+              (Processes, Caller, Files, U32 (Args (0) mod 2 ** 32), Reply.Error);
          when 1 | 2 =>
             Reply.Error := Invalid_Argument;
             if Args (2) > Buffer'Length then return; end if;
@@ -34,8 +36,8 @@ package body AxiomOS.Syscall.Dispatch is
               (Processes.Entries (I).Space, Args (1), Args (2), Number = 1)
             then return; end if;
             if Number = 1 then
-               -- Validate before consuming the stream; mappings are pinned by
-               -- the caller's address-space lock throughout this dispatch.
+               -- Validate before consuming the stream. The BSP exclusively
+               -- owns the current process and its mappings during dispatch.
                IO.Streams.Read (Processes.Entries (I).Handles, Files,
                  IO.Handle (Args (0)), Buffer (0 .. Length - 1), Count, Reply.Error);
                if Reply.Error = Success and then Count > 0 then
@@ -63,7 +65,7 @@ package body AxiomOS.Syscall.Dispatch is
               ((Args (2) and 1) /= 0, (Args (2) and 2) /= 0), H, Reply.Error);
             if Reply.Error = Success then Reply.Value := U64 (H); end if;
          when 4 =>
-            IO.Handles.Close (Processes.Entries (I).Handles, IO.Handle (Args (0)), Reply.Error);
+            IO.Handles.Close (Processes.Entries (I).Handles, Files, IO.Handle (Args (0)), Reply.Error);
          when 6 =>
             declare Code : U32;
             begin
@@ -71,6 +73,23 @@ package body AxiomOS.Syscall.Dispatch is
                                             Code, Reply.Error);
                Reply.Value := U64 (Code);
             end;
+         when 14 =>
+            Reply.Error := Invalid_Argument;
+            if Args (2) > 2 then return; end if;
+            IO.Streams.Seek (Processes.Entries (I).Handles, Files, IO.Handle (Args (0)),
+              Signed (Args (1)), IO.Streams.Seek_Origin'Val (Args (2)), Reply.Value, Reply.Error);
+         when 15 =>
+            declare Kind : VFS.Node_Kind;
+            begin
+               IO.Streams.Stat (Processes.Entries (I).Handles, Files, IO.Handle (Args (0)),
+                 Reply.Value, Kind, Reply.Error);
+            end;
+         when 16 =>
+            Reply.Error := Invalid_Argument;
+            if Args (1) > 3 then return; end if;
+            IO.Handles.Duplicate (Processes.Entries (I).Handles, Files, IO.Handle (Args (0)),
+              ((Args (1) and 1) /= 0, (Args (1) and 2) /= 0), H, Reply.Error);
+            if Reply.Error = Success then Reply.Value := U64 (H); end if;
          when others => Reply.Error := Unsupported;
       end case;
    end Invoke;

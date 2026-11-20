@@ -1,3 +1,4 @@
+with AxiomOS.IO.Handles;
 package body AxiomOS.Process.Table is
    use type U64, U32;
    procedure Initialize (State : in out Manager) is
@@ -74,7 +75,7 @@ package body AxiomOS.Process.Table is
       State.Entries (I).State := Running;
       Result := Success;
    end Start;
-   procedure Exit_Process (State : in out Manager; Id : PID; Code : U32;
+   procedure Exit_Process (State : in out Manager; Id : PID; Files : in out VFS.File_System; Code : U32;
                            Result : out Status) is
       I : constant Natural := Resolve (State, Id);
    begin
@@ -83,7 +84,7 @@ package body AxiomOS.Process.Table is
       Result := Busy;
       if State.Entries (I).State = Zombie then return; end if;
       State.Entries (I).Exit_Code := Code;
-      State.Entries (I).Handles := (others => <>);
+      IO.Handles.Close_All (State.Entries (I).Handles, Files);
       State.Entries (I).State := Zombie;
       Result := Success;
    end Exit_Process;
