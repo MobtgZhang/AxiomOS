@@ -12,8 +12,8 @@
 - `Storage.Ext`：超级块、组描述符、inode、目录、直接/三级间接块、EXT4 extent 树、稀疏数据。
 - `Storage.NTFS`：卷参数、MFT、USA 修复、属性、驻留/非驻留数据、带符号数据运行表、目录索引和分配位图。
 - `Storage.Volumes`：格式识别、逐分量路径查找、统一读取接口。
-- `VFS.Mounts`：根挂载、磁盘 inode 缓存、只读权限、与 tmpfs/控制台节点结合。
-- `IO.Handles` / `IO.Streams`：句柄代次、权限、偏移与实际流读取。
+- `VFS.Mounts`：根及附加卷挂载、分量边界最长前缀路由、磁盘 inode 缓存、只读权限与忙卸载。
+- `IO.Handles` / `IO.Streams`：句柄代次、打开引用、权限收缩复制、seek/stat 与流读写。
 
 磁盘文件按需读取，不复制进 tmpfs；文件读取不受 tmpfs 的 32 KiB 上限限制。当前静态用户 ELF 装载缓冲仍限制为 32 KiB，VFS 文件大小上限为 `Natural'Last`，节点缓存 64 个。上限耗尽必须返回错误。
 
@@ -25,12 +25,18 @@ FAT 支持 FAT16/FAT32（不支持 FAT12/exFAT），短文件名与 ASCII LFN，
 
 EXT2/3 支持直接及单/双/三级间接寻址。EXT4 支持至 4 KiB 块、64bit 描述符、flex_bg、metadata_csum_seed、extent 树及未初始化 extent 零读取。启用 metadata_csum 时检查超级块、组描述符、inode、extent 索引块与普通目录块校验和；文件数据本身没有额外校验。索引目录、bigalloc、加密、inline data、meta_bg 等未实现布局明确返回 Unsupported。普通路径不跟随符号链接。
 
-当前 QEMU 使用独立原始文件系统镜像作为整块系统盘，没有实现 GPT/MBR 分区自动选择。PCI 后端针对四个 QEMU 根总线平台，现代 VirtIO Block；不承诺任意 PCI 桥、多功能设备、NVMe/SATA、IOMMU 或非一致性 DMA 硬件。设备队列当前单请求同步轮询，不能在多个 CPU 并发调用。
+当前 QEMU 使用独立原始文件系统镜像作为整块系统盘，没有实现 GPT/MBR 分区自动选择。PCI 后端扫描 MCFG 各区域的总线、设备及多功能函数，检查能力链边界/循环及必要的 VirtIO 能力。当前仅验证固件已配置 BAR 的四个 QEMU 平台；尚无通用 PCI 桥配置、BAR 空间分配、NVMe/SATA、IOMMU 或非一致性 DMA 支持。队列为单请求同步轮询，由自旋锁串行化跨 CPU 读取；设备停止时确认复位后释放 DMA，可重新初始化。
 
 ## 验证入口
 
-`python3 scripts/make-fs-fixtures.py` 使用系统 mkfs 工具产生六种真实镜像；`scripts/test-storage.sh` 经 Alire/GPRbuild 编译并运行 Ada 测试。覆盖空文件、长文件名、普通与嵌套目录、NTFS 分配目录索引、400000 字节文件跨块/不同偏移、EOF、路径逃逸、VFS 权限、越界和截断设备。测试使用与内核相同的 Ada 解析器。
+`python3 scripts/make-fs-fixtures.py` 使用系统 mkfs 工具产生六种真实镜像；`scripts/test-storage.sh` 经 Alire/GPRbuild 编译并运行 Ada 测试。覆盖空文件、长文件名、普通与嵌套目录、NTFS 分配目录索引、400000 字节文件跨块/不同偏移、EOF、路径逃逸、VFS 权限、seek、挂载路径边界/嵌套/引用/卸载、越界和截断设备。测试使用与内核相同的 Ada 解析器。
 
 `scripts/build.sh --arch=all` 构建每架构独立 EXT4 系统盘；`scripts/run-qemu.py --arch=<arch> --test` 检查从 UEFI 到磁盘根文件系统、用户态系统调用与隔离异常的日志。
 
 镜像测试另覆盖 1 MiB 交替数据/空洞文件、EXT4 外部 extent 节点、FAT 簇链自循环、EXT4 超级块校验和损坏和 NTFS torn-sector 拒绝。FAT/NTFS 测试文件的零区域也要返回相同内容，但镜像工具不一定把这些零区域编码为稀疏分配。
+
+## 挂载与句柄
+
+一个 File_System 最多 8 个挂载，根为槽 1。附加卷只能挂到已存在目录；按规范化路径的最长完整分量前缀路由，`/mnt` 不覆盖 `/mntx`。挂载点拥有独立节点，卸载后恢复被覆盖目录。根不能卸载；子挂载或打开/复制句柄存在时返回 Busy。这里是单个全局有界挂载表，尚无每进程 mount namespace。64 节点缓存没有淘汰，耗尽返回 No_Space。
+
+默认 EXT4 根的 `/tmp`、`/dev` 可挂可写 tmpfs。禁止在只读磁盘目录下隐式创建内存覆盖文件；须显式挂载 tmpfs。退出会关闭所有句柄、释放挂载引用。用户验收在 `/tmp` 写入并定位读取文件，故意保留一个打开句柄退出，随后内核卸载该 tmpfs 验证引用清理。

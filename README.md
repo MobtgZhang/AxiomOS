@@ -1,41 +1,57 @@
 # AxiomOS
 
-以 Ada 2022 为主体的独立操作系统，采用 Alire → GPRbuild → GNAT 工具链。四个 QEMU 平台为 x86-64/q35、AArch64/virt、RISC-V64/virt、LoongArch64/virt。工程规范见 [设计报告](reports/axiomos.md)，分层与目录职责见 [架构](docs/architecture.md)。
+AxiomOS is a freestanding operating-system project written primarily in Ada 2022 and built with the Alire -> GNAT -> GPRbuild toolchain. The validation targets are x86-64, AArch64, RISC-V64 and LoongArch64 under UEFI/QEMU.
 
-目前可运行的完整链路：原生 UEFI PE32+ 菜单 → 独立 Ada 内核 ELF → ExitBootServices → 物理页/堆管理 → VirtIO Block → EXT4 根文件系统 → 多核启动及锁竞争 → 内核自有页表 → 静态 Ada 用户程序 → 系统调用 → 故意越权访问并回收进程。四个平台分别生成机器码，不依赖 Linux 内核运行。
+The boot path is a native UEFI menu, an independently linked Ada kernel ELF, ExitBootServices, physical-page and heap management, a VirtIO block device, a read-only EXT4 root filesystem, SMP bring-up, architecture-owned page tables, and a static Ada userspace. Architecture mechanisms live under arch/<isa>; shared policy lives in kernel/ and hal/; QEMU board discovery lives under platform/.
 
-FAT16、FAT32、NTFS、EXT2、EXT3、EXT4 已接入公共 Ada 存储/VFS 层，当前磁盘挂载为**只读**，tmpfs 可写；默认根文件系统为 EXT4。具体支持特性和限制见 [文件系统说明](docs/filesystems.md)。
+## Architecture validation
 
-## 构建与启动
+The following cards record the verified uname -a identity for each target image.
 
-依赖和固定工具链见 [工具链说明](toolchains/README.md)。在仓库目录运行：
+<table>
+<tr>
+<td><img src="assets/uname-x86_64.png" alt="x86-64 uname result" width="430"></td>
+<td><img src="assets/uname-aarch64.png" alt="AArch64 uname result" width="430"></td>
+</tr>
+<tr>
+<td><img src="assets/uname-riscv64.png" alt="RISC-V64 uname result" width="430"></td>
+<td><img src="assets/uname-loongarch64.png" alt="LoongArch64 uname result" width="430"></td>
+</tr>
+</table>
 
-```sh
-alr -n build
-alr -n run
-scripts/build.sh --arch=all
-python3 scripts/run-qemu.py --arch=x86_64 --cpus=4 --test
-python3 scripts/run-qemu.py --arch=aarch64 --cpus=4 --test
-python3 scripts/run-qemu.py --arch=riscv64 --cpus=4 --test
-python3 scripts/run-qemu.py --arch=loongarch64 --cpus=4 --test
-scripts/test-storage.sh
-# 依次执行宿主测试、六种存储测试、四架构构建及四核 QEMU 验收
-scripts/test.sh
-```
+Each target builds the same common Ada kernel sources plus its own HAL backend and assembly mechanisms. The QEMU acceptance run checks the UEFI menu, kernel entry, MMU operations, clock, SMP, VirtIO, filesystem, I/O, drivers, syscalls, user isolation and resource reclamation.
 
-`--arch` 也接受单一架构。QEMU 不加 `--test` 时保留运行；加 `--graphic` 显示固件窗口。启动菜单支持上下键、Enter 和数字 1/2/3，五秒后默认启动。构建生成 `build/<arch>/esp.img` 和 `root.ext4`；测试保存串口日志与 JSON 结果。`build/` 为生成目录。
+## Build and test
 
-统一测试入口可指定 `--arch=<架构>`、`--cpus=<核数>`、`--timeout=<秒>`；`--host-only` 仅运行宿主算法与磁盘镜像测试。硬件测试还检查 0–4 页预算下的页表创建失败回滚，以及用户进程退出/隔离异常后的页数回收。
+Install the pinned tools described in toolchains/README.md, then run:
 
-二进制交接协议见 [Boot_Info ABI v2](docs/boot-info.md)，用户陷入约定和已实现调用见 [用户态 ABI v1](docs/abi.md)。
-已验证的平台及检查项见 [平台验收记录](docs/platform-support.md)，并发前提与资源回收约定见 [并发说明](docs/locking.md)。
+    alr -n build
+    alr -n run
+    scripts/build.sh --arch=all
+    scripts/test-storage.sh
+    scripts/test.sh
 
-如果宿主 `/tmp` 配额不足，先创建 `build/tmp`，运行宿主 Alire 命令时设置 `TMPDIR="$PWD/build/tmp"`；裸机构建和存储测试脚本已自动设置。
+To run one target directly:
 
-## 当前边界
+    python3 scripts/run-qemu.py --arch=x86_64 --cpus=4 --test
+    python3 scripts/run-qemu.py --arch=aarch64 --cpus=4 --test
+    python3 scripts/run-qemu.py --arch=riscv64 --cpus=4 --test
+    python3 scripts/run-qemu.py --arch=loongarch64 --cpus=4 --test
 
-这是可启动、可验证的内核实现，尚未完成原设计范围内的全部功能：尚无抢占式线程调度、完整中断设备框架、跨核 IPI/TLB shootdown、磁盘写入与日志恢复、完整挂载命名空间或生产级驱动支持。AP 启动和共享锁压力测试结束后进入停止等待；用户程序在 BSP 顺序运行。`spawn/map/ipc/thread` 等未实现的系统调用返回 Unsupported。用户态 Ada 运行时仅支持当前静态程序需要的子集。
+The unified test script also accepts --arch=<target>, --cpus=<count>, --timeout=<seconds> and --host-only. It stores generated images and serial evidence under build/<target>/; those files are ignored by Git.
 
-当前验收针对固定 QEMU/UEFI 组合；未进行实机验收。不要把“编译通过”当成硬件支持，也不要把只读挂载当成完整文件系统读写支持。
+## Implemented subsystems
 
-包名保留 `AxiomOS` 根命名空间，文件名遵循 GNAT 默认规则。公共策略位于 `kernel/`，ISA 机制位于 `arch/`，板级设备位于 `platform/`；不使用自定义短文件名映射。
+- UEFI menu and Boot_Info handoff for all four target architectures.
+- Physical memory allocation, heap management, user address spaces, zero-filled mappings, W^X, protect/unmap and transactional rollback.
+- SMP discovery and AP startup, per-CPU work mailboxes, bounded synchronization, jobs and run-queue data structures.
+- Read-only FAT16, FAT32, NTFS, EXT2, EXT3 and EXT4 volume parsing. EXT4 is the default root filesystem; tmpfs provides writable memory-backed files.
+- VFS mount routing, nested and busy-unmount checks, generation-tagged handles, rights attenuation, independent stream offsets, seek and stat.
+- PCI discovery, driver lifecycle transitions and serialized modern VirtIO block reads with reset and DMA ownership checks.
+- Static Ada userspace, four privilege-transition paths, checked user buffers, syscall dispatch and process-exit resource reclamation.
+
+## Current boundary
+
+This is a bootable and tested kernel foundation, not a finished production operating system. Disk filesystems are currently read-only; writable storage, journal replay and power-failure recovery are not implemented. Userspace runs sequentially on the BSP, and there is no preemptive scheduler, full interrupt-device framework, cross-core user scheduling or TLB shootdown. spawn, IPC and thread_yield remain unsupported. Hardware validation is limited to the documented QEMU/UEFI combinations; real-machine qualification has not been performed.
+
+The project preserves the AxiomOS package namespace and follows GNAT's default Ada filename convention. No remote operation is performed by push.sh; it only previews or creates the local commits listed by its feature groups.
